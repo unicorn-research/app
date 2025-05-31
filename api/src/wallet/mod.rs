@@ -37,6 +37,15 @@ pub enum WalletError {
     #[error("Key not found: {0}")]
     KeyNotFound(String),
 
+    #[error("Key already exists: {0}")]
+    KeyExists(String),
+
+    #[error("No default key set")]
+    NoDefaultKey,
+
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
     #[error("Block validation error: {0}")]
     BlockValidation(String),
 
@@ -54,6 +63,13 @@ pub struct Address {
 
 impl Address {
     pub fn from_public_key(public_key: [u8; 32]) -> Self {
+        Self { public_key }
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut public_key = [0u8; 32];
+        let len = bytes.len().min(32);
+        public_key[..len].copy_from_slice(&bytes[..len]);
         Self { public_key }
     }
 

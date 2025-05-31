@@ -183,6 +183,7 @@ fn format_log_source(source: &api::wallet::network::LogSource) -> String {
         api::wallet::network::LogSource::Consensus => "CONSENSUS".to_string(),
         api::wallet::network::LogSource::Network => "NETWORK".to_string(),
         api::wallet::network::LogSource::VM => "VM".to_string(),
+        api::wallet::network::LogSource::Debug => "DEBUG".to_string(),
     }
 }
 
