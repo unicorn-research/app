@@ -1,2 +1,4 @@
 # app
-multiplatform super-app for mobile and cryptocurrency
+multiplatform super-app
+
+## Dioxus
