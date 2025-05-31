@@ -1,4 +1,5 @@
 use api::wallet::network::{LogEntry, LogLevel, LogSource, NockchainNodeRunner, NodeStatus};
+use api::wallet::WalletError;
 use api::Balance;
 use dioxus::prelude::*;
 use std::sync::{Arc, Mutex};
@@ -6,6 +7,7 @@ use ui::{BalanceCard, Hero, Navbar, NodeConsole};
 
 #[derive(Clone, Routable, Debug, PartialEq)]
 enum Route {
+    #[layout(Layout)]
     #[route("/")]
     Home {},
     #[route("/node")]
@@ -26,10 +28,11 @@ fn App() -> Element {
 #[component]
 fn Layout() -> Element {
     rsx! {
-        div {
-            style: "padding: 20px; max-width: 1200px; margin: 0 auto; font-family: system-ui, sans-serif;",
+        div { style: "min-height: 100vh; display: flex; flex-direction: column;",
             Navbar {}
-            Outlet::<Route> {}
+            main { style: "flex: 1; padding: 20px;",
+                Outlet::<Route> {}
+            }
         }
     }
 }
@@ -37,24 +40,35 @@ fn Layout() -> Element {
 #[component]
 fn Home() -> Element {
     let balance = Balance {
-        confirmed: 1000000,
-        unconfirmed: 50000,
+        confirmed: 0,
+        unconfirmed: 0,
         locked: 0,
     };
 
     rsx! {
-        Layout {}
         div {
             Hero {}
-            BalanceCard {
-                balance: balance,
-                is_loading: false,
-            }
-            div {
-                style: "text-align: center; margin-top: 40px;",
-                h3 { "Welcome to Nockchain Wallet" }
-                p { "Your secure, self-sovereign wallet with built-in full node support." }
-                p { "Navigate to the Node tab to manage your nockchain full node." }
+            BalanceCard { balance, is_loading: false }
+
+            div { style: "margin-top: 40px;",
+                h2 { style: "color: #333; margin-bottom: 20px;", "Quick Actions" }
+                div { style: "display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;",
+                    div { style: "background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;",
+                        h3 { style: "color: #333; margin-bottom: 10px;", "Send" }
+                        p { style: "color: #666; margin-bottom: 15px;", "Send funds to another address" }
+                        button { style: "background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;", "Send Funds" }
+                    }
+                    div { style: "background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;",
+                        h3 { style: "color: #333; margin-bottom: 10px;", "Receive" }
+                        p { style: "color: #666; margin-bottom: 15px;", "Generate a receive address" }
+                        button { style: "background: #28a745; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;", "Get Address" }
+                    }
+                    div { style: "background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;",
+                        h3 { style: "color: #333; margin-bottom: 10px;", "Node" }
+                        p { style: "color: #666; margin-bottom: 15px;", "Manage your nockchain node" }
+                        button { style: "background: #6f42c1; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer;", "Node Settings" }
+                    }
+                }
             }
         }
     }
@@ -62,7 +76,7 @@ fn Home() -> Element {
 
 #[component]
 fn Node() -> Element {
-    // Create a shared node runner instance
+    // Create a shared node runner instance with proper Arc<Mutex<>> handling
     let node_runner = use_signal(|| Arc::new(Mutex::new(NockchainNodeRunner::new())));
     let mut node_status = use_signal(|| NodeStatus::Stopped);
     let mut logs = use_signal(|| Vec::<LogEntry>::new());
@@ -78,93 +92,197 @@ fn Node() -> Element {
                 timestamp: chrono::Utc::now(),
                 level: LogLevel::Info,
                 source: LogSource::Node,
-                message: "Node ready to start. Click the start button to begin.".to_string(),
+                message: "Nockchain node ready to start. Click Start Node to begin.".to_string(),
             }]);
         }
     });
 
     let start_node_handler = move |_| {
         let node_runner_clone = node_runner.clone();
+        let mut is_starting_clone = is_starting.clone();
+        let mut node_status_clone = node_status.clone();
+        let mut logs_clone = logs.clone();
+
+        // Prevent multiple start attempts
+        if *is_starting.read()
+            || matches!(
+                *node_status.read(),
+                NodeStatus::Running | NodeStatus::Starting
+            )
+        {
+            return;
+        }
 
         is_starting.set(true);
         node_status.set(NodeStatus::Starting);
 
-        spawn(async move {
-            let result = {
-                let mut runner = node_runner_clone.read().lock().unwrap();
-                runner.start_node().await
-            };
+        // Add initial log immediately
+        {
+            let mut current_logs = logs_clone.read().clone();
+            current_logs.push(LogEntry {
+                timestamp: chrono::Utc::now(),
+                level: LogLevel::Info,
+                source: LogSource::Node,
+                message: "🚀 Starting nockchain node with libraries...".to_string(),
+            });
+            logs_clone.set(current_logs);
+        }
 
-            match result {
-                Ok(()) => {
-                    node_status.set(NodeStatus::Running);
-                    // Get the latest logs from the node runner
-                    let node_logs = {
-                        let runner = node_runner_clone.read().lock().unwrap();
-                        runner.get_logs(50)
-                    };
-                    logs.set(node_logs);
+        spawn(async move {
+            // Add timeout protection
+            let start_result = tokio::time::timeout(tokio::time::Duration::from_secs(30), async {
+                // Try to acquire lock with timeout
+                let runner_result =
+                    tokio::time::timeout(tokio::time::Duration::from_secs(5), async {
+                        match node_runner_clone.read().lock() {
+                            Ok(mut runner) => {
+                                // Add progress log
+                                let mut current_logs = logs_clone.read().clone();
+                                current_logs.push(LogEntry {
+                                    timestamp: chrono::Utc::now(),
+                                    level: LogLevel::Info,
+                                    source: LogSource::Node,
+                                    message: "🔧 Initializing node components...".to_string(),
+                                });
+                                logs_clone.set(current_logs);
+
+                                runner.start_node().await
+                            }
+                            Err(e) => Err(WalletError::Network(format!("Lock error: {}", e))),
+                        }
+                    })
+                    .await;
+
+                match runner_result {
+                    Ok(result) => result,
+                    Err(_) => Err(WalletError::Network(
+                        "Timeout acquiring node lock".to_string(),
+                    )),
                 }
-                Err(e) => {
-                    node_status.set(NodeStatus::Error(format!("Failed to start node: {}", e)));
-                    let mut current_logs = logs.read().clone();
+            })
+            .await;
+
+            // Handle the result
+            match start_result {
+                Ok(Ok(())) => {
+                    node_status_clone.set(NodeStatus::Running);
+                    let mut current_logs = logs_clone.read().clone();
+                    current_logs.push(LogEntry {
+                        timestamp: chrono::Utc::now(),
+                        level: LogLevel::Info,
+                        source: LogSource::Node,
+                        message: "✅ Node started successfully!".to_string(),
+                    });
+                    logs_clone.set(current_logs);
+
+                    // Get fresh logs from node
+                    if let Ok(runner) = node_runner_clone.read().lock() {
+                        let node_logs = runner.get_logs(50);
+                        if !node_logs.is_empty() {
+                            logs_clone.set(node_logs);
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    let error_msg = format!("❌ Failed to start node: {}", e);
+                    node_status_clone.set(NodeStatus::Error(error_msg.clone()));
+                    let mut current_logs = logs_clone.read().clone();
                     current_logs.push(LogEntry {
                         timestamp: chrono::Utc::now(),
                         level: LogLevel::Error,
                         source: LogSource::Node,
-                        message: format!("Failed to start node: {}", e),
+                        message: error_msg,
                     });
-                    logs.set(current_logs);
+                    logs_clone.set(current_logs);
+                }
+                Err(_) => {
+                    let error_msg = "⏰ Node start timeout after 30 seconds".to_string();
+                    node_status_clone.set(NodeStatus::Error(error_msg.clone()));
+                    let mut current_logs = logs_clone.read().clone();
+                    current_logs.push(LogEntry {
+                        timestamp: chrono::Utc::now(),
+                        level: LogLevel::Error,
+                        source: LogSource::Node,
+                        message: error_msg,
+                    });
+                    logs_clone.set(current_logs);
                 }
             }
-            is_starting.set(false);
+
+            is_starting_clone.set(false);
         });
     };
 
     let stop_node_handler = move |_| {
         let node_runner_clone = node_runner.clone();
+        let mut is_stopping_clone = is_stopping.clone();
+        let mut node_status_clone = node_status.clone();
+        let mut logs_clone = logs.clone();
 
         is_stopping.set(true);
         node_status.set(NodeStatus::Stopping);
 
         spawn(async move {
-            let mut runner = node_runner_clone.read().lock().unwrap();
+            // Safely handle the mutex lock
+            let stop_result = match node_runner_clone.read().lock() {
+                Ok(mut runner) => runner.stop_node().await,
+                Err(e) => Err(WalletError::Network(format!(
+                    "Failed to acquire node runner lock: {}",
+                    e
+                ))),
+            };
 
-            match runner.stop_node().await {
+            match stop_result {
                 Ok(()) => {
-                    node_status.set(NodeStatus::Stopped);
+                    node_status_clone.set(NodeStatus::Stopped);
                     // Get the latest logs from the node runner
-                    let node_logs = runner.get_logs(50);
-                    logs.set(node_logs);
+                    if let Ok(runner) = node_runner_clone.read().lock() {
+                        let node_logs = runner.get_logs(50);
+                        logs_clone.set(node_logs);
+                    }
                 }
                 Err(e) => {
-                    node_status.set(NodeStatus::Error(format!("Failed to stop node: {}", e)));
-                    let mut current_logs = logs.read().clone();
+                    let error_msg = format!("Failed to stop node: {}", e);
+                    node_status_clone.set(NodeStatus::Error(error_msg.clone()));
+                    let mut current_logs = logs_clone.read().clone();
                     current_logs.push(LogEntry {
                         timestamp: chrono::Utc::now(),
                         level: LogLevel::Error,
                         source: LogSource::Node,
-                        message: format!("Failed to stop node: {}", e),
+                        message: error_msg,
                     });
-                    logs.set(current_logs);
+                    logs_clone.set(current_logs);
                 }
             }
-            is_stopping.set(false);
+            is_stopping_clone.set(false);
         });
     };
 
-    // Periodic log updates from the running node
+    // Periodic log updates from the running node with timeout protection
     use_effect(move || {
         let node_runner_clone = node_runner.clone();
+        let mut logs_clone = logs.clone();
         spawn(async move {
             loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-                let runner = node_runner_clone.read().lock().unwrap();
-                if runner.is_running() {
-                    let node_logs = runner.get_logs(50);
-                    if !node_logs.is_empty() {
-                        logs.set(node_logs);
+                // Try to get logs with timeout to prevent hanging
+                let log_result = tokio::time::timeout(tokio::time::Duration::from_secs(1), async {
+                    if let Ok(runner) = node_runner_clone.read().lock() {
+                        if runner.is_running() {
+                            Some(runner.get_logs(50))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .await;
+
+                if let Ok(Some(node_logs)) = log_result {
+                    if !node_logs.is_empty() && node_logs.len() != logs_clone.read().len() {
+                        logs_clone.set(node_logs);
                     }
                 }
             }
@@ -189,10 +307,19 @@ fn Node() -> Element {
         .cloned()
         .collect::<Vec<_>>();
 
+    // Get current node configuration for display
+    let node_config = {
+        if let Ok(runner) = node_runner.read().lock() {
+            runner.get_config().clone()
+        } else {
+            // Fallback to default config if lock fails
+            api::wallet::network::NockchainNodeConfig::default()
+        }
+    };
+
     rsx! {
-        Layout {}
         div {
-            h2 {
+                h2 {
                 style: "color: #333; margin-bottom: 24px; display: flex; align-items: center; gap: 12px;",
                 "🦄 Node Management"
             }
@@ -247,7 +374,7 @@ fn Node() -> Element {
                 }
             }
 
-            ui::wallet::NodeConsole {
+            NodeConsole {
                 status: node_status.read().clone(),
                 logs: filtered_logs,
                 on_start_node: start_node_handler,
@@ -256,7 +383,7 @@ fn Node() -> Element {
                 is_stopping: *is_stopping.read(),
             }
 
-            // Node configuration info
+            // Node configuration info - using real config from node runner
             div {
                 style: "background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 24px;",
                 h3 {
@@ -267,27 +394,43 @@ fn Node() -> Element {
                     style: "display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; color: #666;",
                     div {
                         strong { "Network: " }
-                        span { style: "color: #28a745; font-weight: 600;", "Mainnet (Dumbnet)" }
+                        if node_config.fakenet {
+                            span { style: "color: #ffc107; font-weight: 600;", "Fakenet (Test)" }
+                        } else {
+                            span { style: "color: #28a745; font-weight: 600;", "Mainnet (Dumbnet)" }
+                        }
                     }
                     div {
                         strong { "P2P Port: " }
-                        "4001"
+                        "{node_config.p2p_port}"
                     }
                     div {
                         strong { "RPC Port: " }
-                        "8332"
+                        "{node_config.rpc_port}"
                     }
                     div {
                         strong { "Genesis Watcher: " }
-                        span { style: "color: #007bff;", "Enabled" }
+                        if node_config.genesis_watcher {
+                            span { style: "color: #007bff;", "Enabled" }
+                        } else {
+                            span { style: "color: #6c757d;", "Disabled" }
+                        }
                     }
                     div {
                         strong { "Mining: " }
-                        span { style: "color: #6c757d;", "Disabled" }
+                        if node_config.mining_enabled {
+                            span { style: "color: #28a745;", "Enabled" }
+                        } else {
+                            span { style: "color: #6c757d;", "Disabled" }
+                        }
                     }
                     div {
                         strong { "Max Peers: " }
-                        "225 (150 in, 75 out)"
+                        if let (Some(incoming), Some(outgoing)) = (node_config.max_established_incoming, node_config.max_established_outgoing) {
+                            "{incoming + outgoing} ({incoming} in, {outgoing} out)"
+                        } else {
+                            "Unlimited"
+                        }
                     }
                 }
 
@@ -295,24 +438,25 @@ fn Node() -> Element {
                     style: "margin-top: 16px; padding-top: 16px; border-top: 1px solid #dee2e6;",
                     h4 {
                         style: "color: #333; margin-bottom: 8px; font-size: 14px;",
-                        "Bootstrap Peers (10 nodes)"
+                        "Bootstrap Peers ({node_config.peers.len()} nodes)"
                     }
                     div {
-                        style: "font-family: monospace; font-size: 12px; color: #6c757d; line-height: 1.4; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;",
-                        div {
-                            "• 104.131.131.131:4001" br {}
-                            "• 134.209.28.98:4001" br {}
-                            "• 143.198.57.46:4001" br {}
-                            "• 165.227.41.207:4001" br {}
-                            "• 68.183.123.45:4001"
+                        style: "font-family: monospace; font-size: 12px; color: #6c757d; line-height: 1.4; max-height: 120px; overflow-y: auto;",
+                        for peer in node_config.peers.iter() {
+                            div { "• {peer}" }
                         }
-                        div {
-                            "• 174.138.45.123:4001" br {}
-                            "• 159.203.188.97:4001" br {}
-                            "• 207.154.231.65:4001" br {}
-                            "• 128.199.47.89:4001" br {}
-                            "• 188.166.204.102:4001"
-                        }
+                    }
+                }
+
+                div {
+                    style: "margin-top: 16px; padding-top: 16px; border-top: 1px solid #dee2e6;",
+                    h4 {
+                        style: "color: #333; margin-bottom: 8px; font-size: 14px;",
+                        "Data Directory"
+                    }
+                    div {
+                        style: "font-family: monospace; font-size: 12px; color: #6c757d; word-break: break-all;",
+                        "{node_config.data_dir.display()}"
                     }
                 }
             }
