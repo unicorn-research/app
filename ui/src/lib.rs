@@ -1,10 +1,14 @@
 //! This crate contains all shared UI for the workspace.
 
-mod hero;
-pub use hero::Hero;
+pub mod echo;
+pub mod hero;
+pub mod navbar;
+pub mod wallet;
 
-mod navbar;
+// Re-export commonly used components
+pub use echo::Echo;
+pub use hero::Hero;
 pub use navbar::Navbar;
 
-mod echo;
-pub use echo::Echo;
+// Re-export wallet components
+pub use wallet::{BalanceCard, NodeConsole, QuickActions, ReceiveView, SendForm, TransactionList};

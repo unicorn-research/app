@@ -1,3 +1,19 @@
+# Unicorn App
+
+It's abundantly clear that there is need of a rigorously audited (open source), well-supported wallet.  
+
+The unicorn app allows networks and apps to put their own apps direclty in the wallet with the magic of ipfs.  
+
+
+
+
+
+
+
+
+
+
+
 # Development
 
 Your new workspace contains a member crate for each of the web, desktop and mobile platforms, a `ui` crate for shared components and a `api` crate for shared backend logic:

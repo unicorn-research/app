@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus = { workspace = true, features = ["router"] }
+dioxus = { workspace = true, features = ["desktop", "router", "launch"] }
 ui = { workspace = true }
+api = { workspace = true }
+tokio = { version = "1.0", features = ["full"] }
+chrono = { workspace = true }
 
 [features]
 default = []

@@ -4,4 +4,58 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus = { workspace = true, features = ["fullstack"] }
+dioxus = { workspace = true, features = ["server"] }
+
+# Full nockchain integration - all crates (some temporarily disabled due to kernels dependency)
+# nockchain = { workspace = true }              # Disabled - depends on kernels crate with missing .jam files
+# nockchain-wallet = { workspace = true }       # Disabled - depends on kernels crate with missing .jam files
+nockchain-libp2p-io = { workspace = true }
+nockchain-bitcoin-sync = { workspace = true }
+nockapp = { workspace = true }
+nockvm = { workspace = true }
+nockvm_macros = { workspace = true }
+# kernels = { workspace = true } # Temporarily disabled due to missing .jam assets
+zkvm-jetpack = { workspace = true }
+
+# Crypto and blockchain - real implementations
+ed25519-dalek = { workspace = true }
+curve25519-dalek = { workspace = true }
+x25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+sha3 = { workspace = true }
+blake3 = { workspace = true }
+bs58 = { workspace = true }
+
+# Additional crypto libraries
+secp256k1 = { workspace = true }
+bip39 = { workspace = true }
+hkdf = { workspace = true }
+hmac = { workspace = true }
+ripemd = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+byteorder = { workspace = true }
+
+# Async and networking
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+
+# Random number generation
+rand = "0.8.5"
+
+# Node management
+hex = { workspace = true }
+which = { workspace = true }
+
+# Nockchain-style computation
+nom = { workspace = true }
+ibig = { workspace = true }
